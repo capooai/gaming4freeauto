@@ -5,11 +5,11 @@ from seleniumbase import SB
 # ==========================================
 # 💡 核心配置
 # ==========================================
-TARGET_URL = "https://game4free.net/woairenqi"
-MC_USERNAME = "renqi"
+TARGET_URL = "https://game4free.net/email_mimo"
+MC_USERNAME = "wulaqi"
 
-TG_TOKEN = os.getenv("TG_TOKEN", "")
-TG_CHAT = os.getenv("TG_CHAT_ID", "")
+TG_TOKEN = os.getenv("TG_TOKEN", "8509597375:AAFCFxH9xzhHwVAmvR_9xzKKmmJntJO9BRo")
+TG_CHAT = os.getenv("TG_CHAT_ID", "6537668007")
 
 def send_tg(msg):
     if TG_TOKEN and TG_CHAT:
