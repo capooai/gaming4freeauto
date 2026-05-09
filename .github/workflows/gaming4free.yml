@@ -2,8 +2,6 @@ name: gaming4free renew (WARP + Python)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "40 * * * *"   # 每小时抽卡一次
 
 jobs:
   run:
