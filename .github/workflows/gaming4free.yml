@@ -1,29 +1,27 @@
 name: G4F Multi-Server Renew
 
-# 触发条件配置
 on:
   push:
     branches:
-      - main  # 当代码推送到 main 分支时触发运行
+      - main
   schedule:
-    - cron: '0 0 * * *'  # 每天国际标准时间 00:00 (北京时间 08:00) 自动定时运行
-  workflow_dispatch:     # 开启手动触发 / API 请求触发
+    - cron: '0 0 * * *'  # 每天北京时间 08:00 自动运行
+  workflow_dispatch:     # 支持手动/API 请求触发
 
 jobs:
   renew:
-    runs-on: ubuntu-24.04  # 使用 Ubuntu 24.04 环境以匹配 Python 3.12 最佳兼容性
+    runs-on: ubuntu-24.04
 
     steps:
       # 1. 检出仓库中的代码
       - name: Checkout repository code
         uses: actions/checkout@v4
 
-      # 2. 设置 Python 3.12 环境
+      # 2. 设置 Python 3.12 环境（已移除 cache 配置）
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip' # 开启 pip 缓存，加速后续运行
 
       # 3. 安装依赖系统库及 python 包
       - name: Install dependencies
@@ -34,7 +32,7 @@ jobs:
           python -m playwright install-deps chromium
 
       # 4. 运行您的续期脚本
-      # 假设您的脚本文件名叫 renew.py，如果不是，请将下方修改为实际文件名
+      # 注意：请确保你仓库里的 Python 脚本文件名叫 renew.py，如果不是，请把下方修改为实际文件名
       - name: Run G4F Renew Script
         run: |
           python renew.py
