@@ -1,129 +1,146 @@
-import os, sys, time, urllib.request, subprocess, json
-import speech_recognition as sr
-from seleniumbase import SB
+#!/usr/bin/python3.12
+"""
+G4F Multi-Server Renew — CloakBrowser 版
+支持多个服务器续期，每服务器加 90 分钟
+v3 - 修复浏览器泄漏漏洞，优化 Playwright 元素等待
+"""
+import sys
+import re
+import time
+from cloakbrowser import launch
 
-# ==========================================
-# 💡 核心配置
-# ==========================================
-TARGET_URL = "https://game4free.net/email_mimo"
-MC_USERNAME = "wulaqi"
+SERVERS = [
+    {"url": "https://g4f.gg/deku", "name": "Deku"},
+    {"url": "https://g4f.gg/rena", "name": "Rena"},
+]
 
-TG_TOKEN = os.getenv("TG_TOKEN", "8509597375:AAFCFxH9xzhHwVAmvR_9xzKKmmJntJO9BRo")
-TG_CHAT = os.getenv("TG_CHAT_ID", "6537668007")
+def _parse_time(s):
+    """HH:MM:SS -> 秒数，失败返回 None"""
+    if s == 'N/A' or not s:
+        return None
+    try:
+        parts = s.strip().split(':')
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        elif len(parts) == 2:
+            return int(parts[0]) * 60 + int(parts[1])
+        return None
+    except:
+        return None
 
-def send_tg(msg):
-    if TG_TOKEN and TG_CHAT:
+def _run_single_attempt(url, name):
+    """执行单次续期尝试，核心逻辑。确保异常能抛出供外层捕获"""
+    browser = launch(headless=True, humanize=True)
+    try:
+        page = browser.new_page()
+        # 延长超时时间到 45 秒，确保 Cloudflare 盾牌盾加载完成
+        page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        
+        # 稍等片刻让页面完全稳定
+        page.wait_for_timeout(3000)
+
+        body = page.evaluate("document.body?.innerText || ''")
+
+        if "Come back in" in body:
+            return False, f"⏳ {name} 冷却中", None
+
+        # 匹配初始时间 (忽略大小写)
+        m = re.search(r'SERVER TIME REMAINING\s*([\d:]+)', body, re.I)
+        before_str = m.group(1) if m else 'N/A'
+        before_secs = _parse_time(before_str)
+        print(f"[{name}] Before: {before_str}", file=sys.stderr)
+
+        # 确保输入框已经渲染
+        page.wait_for_selector('input[name="voter_name"]', timeout=10000)
+        page.fill('input[name="voter_name"]', 'Rena')
+
+        # 确保按钮可以点击并点击
+        page.wait_for_selector('button.vote-btn', timeout=5000)
+        page.click('button.vote-btn')
+        print(f"[{name}] Clicked vote button. Waiting for verification...", file=sys.stderr)
+
+        # 关键：点击后，Turnstile 往往需要几秒钟隐式响应或弹出验证
+        # 循环检测页面状态变化，最多等待 30 秒
+        success_detected = False
+        after_str = 'N/A'
+        
+        for _ in range(15):
+            page.wait_for_timeout(2000)  # 每 2 秒轮询一次
+            current_text = page.evaluate("document.body?.innerText || ''")
+            lower_text = current_text.lower()
+            
+            # 1. 检查是否有成功标志
+            if "✓" in current_text and ("added" in lower_text or "minute" in lower_text):
+                success_detected = True
+            
+            # 2. 尝试提取最新的时间
+            m2 = re.search(r'SERVER TIME REMAINING\s*([\d:]+)', current_text, re.I)
+            if m2:
+                after_str = m2.group(1)
+                
+            if success_detected:
+                break
+                
+        after_secs = _parse_time(after_str)
+        print(f"[{name}] After: {after_str}", file=sys.stderr)
+
+        # 结果判定
+        if success_detected:
+            return True, f"✅ {name} 续期成功！剩余: {after_str}", after_str
+
+        if before_secs and after_secs and after_secs > before_secs + 3000:
+            diff_min = (after_secs - before_secs) // 60
+            return True, f"✅ {name} 续期成功！剩余: {after_str} (+{diff_min}分)", after_str
+
+        if "come back" in lower_text or "cooldown" in lower_text:
+            return False, f"⏳ {name} 冷却中（{after_str}）", after_str
+
+        return False, f"❌ {name} 续期未成功。剩余: {after_str}", after_str
+
+    finally:
+        # 无论成功还是抛出异常，单次交互完毕后必须关闭浏览器
         try:
-            url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-            data = json.dumps({"chat_id": TG_CHAT, "text": f"🤖 G4F 自动续期:\n{msg}"}).encode('utf-8')
-            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
-            urllib.request.urlopen(req, timeout=10)
+            browser.close()
         except:
             pass
 
-print(f"\n===== 🚀 开始执行极速续期 (WARP + Python 终极版) =====")
-
-# 🌟 必须加回来：指定本地 WARP SOCKS5 代理
-proxy_str = "socks5://127.0.0.1:40000"
-
-with SB(uc=True, proxy=proxy_str, headless=False) as sb:
-    try:
-        print("🌐 正在通过 WARP SOCKS5 代理访问目标...")
-        sb.open(TARGET_URL)
-        sb.sleep(2)
-
-        print("🛡️ 锁定 reCAPTCHA 框架...")
-        sb.switch_to_frame('iframe[title*="reCAPTCHA"]')
-        
-        print("🖱️ 点击人机验证复选框...")
-        sb.wait_for_element('.recaptcha-checkbox-border', timeout=15)
-        sb.click('.recaptcha-checkbox-border')
-        sb.sleep(4)
-
-        sb.switch_to_default_content()
-        sb.switch_to_frame('iframe[title*="reCAPTCHA"]')
-        is_checked = sb.get_attribute('#recaptcha-anchor', 'aria-checked')
-        
-        if is_checked == 'true':
-            print("⏩ 运气爆表！IP 干净，验证码秒过。")
-        else:
-            print("⚠️ 触发挑战，正在尝试通过音频破解...")
-            sb.switch_to_default_content()
-            sb.switch_to_frame('iframe[title*="recaptcha challenge"]')
-
-            if sb.is_element_visible('#recaptcha-audio-button'):
-                sb.click('#recaptcha-audio-button')
-                sb.sleep(3)
-
-                if sb.is_text_visible("Try again later"):
-                    print("❌ 抽到“黑人” IP，Google 拒绝下发音频。等待下次换 IP 自动重试。")
-                else:
-                    print("📥 正在抓取音频数据流...")
-                    audio_src = None
-                    if sb.is_element_visible('#audio-source'):
-                        audio_src = sb.get_attribute('#audio-source', 'src')
-                    elif sb.is_element_visible('.rc-audiochallenge-tdownload-link'):
-                        audio_src = sb.get_attribute('.rc-audiochallenge-tdownload-link', 'href')
-
-                    if audio_src:
-                        urllib.request.urlretrieve(audio_src, 'payload.mp3')
-                        subprocess.run(['ffmpeg', '-i', 'payload.mp3', 'payload.wav', '-y'], 
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-                        print("🧠 AI 正在解析语音内容...")
-                        r = sr.Recognizer()
-                        with sr.AudioFile('payload.wav') as source:
-                            audio_data = r.record(source)
-                        try:
-                            text = r.recognize_google(audio_data)
-                            print(f"✅ 识别成功: [{text}]")
-                            
-                            sb.type('#audio-response', text)
-                            sb.click('#recaptcha-verify-button')
-                            sb.sleep(4)
-                        except sr.UnknownValueError:
-                            print("❌ 引擎无法识别音频内容。")
-                        except sr.RequestError as e:
-                            print(f"❌ 语音引擎请求错误: {e}")
-                    else:
-                        print("❌ 未能获取到音频链接。")
-            else:
-                print("❌ 当前 IP 无法加载音频，可能被 Google 临时屏蔽。")
-           
-        # 验证结束，彻底切回最外层，准备填表单
-        sb.switch_to_default_content()
-        print(f"✍️ 填入服务器名: {MC_USERNAME}")
-        
-        # 填入用户名
-        sb.type('input[type="text"]', MC_USERNAME)
-
-        os.makedirs("screenshots", exist_ok=True)
-        sb.save_screenshot("screenshots/1_filled.png")
-
-        print("🚀 提交续期请求...")
+def renew_server(url, name):
+    """带重试机制的包裹函数（无递归，安全释放资源）"""
+    max_retries = 2
+    for attempt in range(max_retries):
         try:
-            # 🌟 核心杀手锏：利用 F12 扒出的绝对 ID，配合你提议的“强制模拟鼠标点击”
-            sb.wait_for_element('#submit-button', timeout=10)
-            sb.js_click('#submit-button') # JavaScript 强制穿透模拟点击，神挡杀神！
-            print("🖱️ 成功执行模拟点击 Renew 按钮！")
+            success, msg, time_left = _run_single_attempt(url, name)
             
-            print("⏳ 等待服务器响应...")
-            sb.sleep(5)
-            sb.save_screenshot("screenshots/2_result.png")
-
-            if sb.is_text_visible("The server has been renewed."):
-                print("🎉 读取到成功提示: The server has been renewed.")
-                print("✅ 续期大成功！")
-                send_tg(f"✅ 服务器 [{MC_USERNAME}] 续期成功！(WARP IP)")
-            else:
-                print("⚠️ 按钮已点，但未读取到成功横幅，请查阅截图确认。")
-                send_tg(f"⚠️ 续期已执行，请查阅截图确认状态。")
+            # 如果成功，或者是确定处于冷却中，则无需重试
+            if success or "冷却中" in msg:
+                return success, msg, time_left
+                
+            print(f"[{name}] 尝试未成功，准备进行重试...", file=sys.stderr)
+            
         except Exception as e:
-            print(f"❌ 页面未出现可点击的 Renew 按钮或点击超时: {e}")
-            send_tg(f"❌ 续期跳过：无法定位并点击 Renew 按钮。")
+            print(f"[{name}] 第 {attempt + 1} 次尝试发生异常: {e}", file=sys.stderr)
+            if attempt == max_retries - 1:
+                return False, f"❌ {name} 错误: {e}", None
+                
+        # 重试前等待 3 秒
+        if attempt < max_retries - 1:
+            time.sleep(3)
+            
+    return False, f"❌ {name} 续期失败（已重试）", None
 
-    except Exception as e:
-        print(f"❌ 发生致命错误: {e}")
-        os.makedirs("screenshots", exist_ok=True)
-        sb.save_screenshot("screenshots/error.png")
-        send_tg(f"❌ 自动续期崩溃: {e}")
+def main():
+    results = []
+    for server in SERVERS:
+        print(f"\n=== 开始续期服务器: {server['name']} ===", file=sys.stderr)
+        success, msg, time_left = renew_server(server["url"], server["name"])
+        results.append((success, msg, time_left))
+
+    print("\n" + "="*30)
+    print("📊 G4F 服务器续期报告")
+    for _, msg, _ in results:
+        print(f"  {msg}")
+    print("="*30)
+    sys.stderr.flush()
+
+if __name__ == "__main__":
+    main()
