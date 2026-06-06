@@ -1,72 +1,40 @@
-name: gaming4free renew (WARP + Python)
+name: G4F Multi-Server Renew
 
+# 触发条件配置
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main  # 当代码推送到 main 分支时触发运行
+  schedule:
+    - cron: '0 0 * * *'  # 每天国际标准时间 00:00 (北京时间 08:00) 自动定时运行
+  workflow_dispatch:     # 开启手动触发 / API 请求触发
 
 jobs:
-  run:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
+  renew:
+    runs-on: ubuntu-24.04  # 使用 Ubuntu 24.04 环境以匹配 Python 3.12 最佳兼容性
 
     steps:
-      - uses: actions/checkout@v4
+      # 1. 检出仓库中的代码
+      - name: Checkout repository code
+        uses: actions/checkout@v4
 
-      # =========================
-      # 🟡 1️⃣ 安装官方 WARP 客户端 (纯 SOCKS5 模式)
-      # =========================
-      - name: Setup Official WARP Proxy
-        run: |
-          # 导入 Cloudflare 官方源并安装
-          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ jammy main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
-          sudo apt-get update && sudo apt-get install -y cloudflare-warp
-          
-          # 注册并设置为纯代理模式 (默认占用 40000 端口，绝不断网)
-          warp-cli --accept-tos registration new
-          warp-cli --accept-tos mode proxy
-          warp-cli --accept-tos connect
-          
-          echo "⏳ 等待 WARP 隧道建立 (10秒)..."
-          sleep 10
-
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg
-
-      - name: Setup Python
+      # 2. 设置 Python 3.12 环境
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          
-      - name: Install Python packages
-        run: |
-          pip install seleniumbase SpeechRecognition pydub
-          sbase install chromium
+          python-version: '3.12'
+          cache: 'pip' # 开启 pip 缓存，加速后续运行
 
-      # =========================
-      # 🟡 2️⃣ 运行脚本
-      # =========================
-      - name: Run script
-        env:
-          MC_USERNAME: ${{ secrets.MC_USERNAME }}
-          TG_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      # 3. 安装依赖系统库及 python 包
+      - name: Install dependencies
         run: |
-          mkdir -p screenshots
-          
-          echo "🌍 验证 WARP SOCKS5 代理 IP:"
-          # 这次绝对能成功连上 40000 端口并打印出 WARP IP
-          curl -s -x socks5://127.0.0.1:40000 https://api.ipify.org || echo "⚠️ IP获取失败"
-          echo ""
-          
-          # 启动虚拟桌面并运行无敌的 Python 打码脚本
-          xvfb-run -a python renew.py
-          
-      - name: Upload screenshots
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: screenshots
-          path: screenshots/**
-          if-no-files-found: warn
+          python -m pip install --upgrade pip
+          pip install cloakbrowser
+          python -m playwright install chromium
+          python -m playwright install-deps chromium
+
+      # 4. 运行您的续期脚本
+      # 假设您的脚本文件名叫 renew.py，如果不是，请将下方修改为实际文件名
+      - name: Run G4F Renew Script
+        run: |
+          python renew.py
