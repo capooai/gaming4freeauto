@@ -1,9 +1,11 @@
 #!/usr/bin/python3.12
-"""
-G4F Multi-Server Renew — CloakBrowser 版
-v6 - 修复：等待 Turnstile 验证模态框关闭后再检测结果
-"""
-import sys, re, time
+
+import sys
+import re
+import time
+import random
+import string
+
 from cloakbrowser import launch
 
 SERVERS = [
@@ -11,105 +13,507 @@ SERVERS = [
     {"url": "https://g4f.gg/rena", "name": "Rena"},
 ]
 
+
+def random_voter_name():
+    return (
+        random.choice(string.ascii_uppercase)
+        + ''.join(
+            random.choices(
+                string.ascii_lowercase,
+                k=4
+            )
+        )
+    )
+
+
 def _parse_time(s):
-    if s == 'N/A' or not s: return None
-    try:
-        parts = s.strip().split(':')
-        if len(parts) == 3: return int(parts[0])*3600 + int(parts[1])*60 + int(parts[2])
-        elif len(parts) == 2: return int(parts[0])*60 + int(parts[1])
+    if s == "N/A" or not s:
         return None
-    except: return None
+
+    try:
+        parts = s.strip().split(":")
+
+        if len(parts) == 3:
+            return (
+                int(parts[0]) * 3600
+                + int(parts[1]) * 60
+                + int(parts[2])
+            )
+
+        if len(parts) == 2:
+            return (
+                int(parts[0]) * 60
+                + int(parts[1])
+            )
+
+    except:
+        pass
+
+    return None
+
+
+def _extract_remaining_time(text):
+
+    m = re.search(
+        r"SERVER TIME REMAINING\s*([\d:]+)",
+        text,
+        re.I
+    )
+
+    return m.group(1) if m else "N/A"
+
+
+def _safe_goto(page, url, name):
+
+    for attempt in range(3):
+
+        try:
+
+            page.goto(
+                url,
+                wait_until="networkidle",
+                timeout=60000
+            )
+
+            return
+
+        except Exception as e:
+
+            msg = str(e)
+
+            if any(x in msg for x in (
+                "ERR_NETWORK_CHANGED",
+                "ERR_CONNECTION_RESET",
+                "ERR_TIMED_OUT",
+            )):
+
+                print(
+                    f"[{name}] 网络异常({attempt+1}/3): {msg}",
+                    file=sys.stderr
+                )
+
+                page.wait_for_timeout(5000)
+
+                continue
+
+            raise
+
+    raise RuntimeError(
+        f"{name} 页面加载失败"
+    )
+
+
+def _click_turnstile(page, name):
+
+    try:
+
+        iframe = page.locator(
+            'iframe[src*="turnstile"]'
+        ).first
+
+        if iframe.count() == 0:
+            return False
+
+        box = iframe.bounding_box()
+
+        if not box:
+            return False
+
+        page.mouse.click(
+            box["x"] + box["width"] / 2,
+            box["y"] + box["height"] / 2
+        )
+
+        print(
+            f"[{name}] 已尝试点击 Turnstile",
+            file=sys.stderr
+        )
+
+        return True
+
+    except Exception as e:
+
+        print(
+            f"[{name}] Turnstile点击失败: {e}",
+            file=sys.stderr
+        )
+
+        return False
+
 
 def _run_single_attempt(url, name):
-    browser = launch(headless=True, humanize=True)
+
+    browser = launch(
+        headless=True,
+        humanize=True
+    )
+
     try:
+
         page = browser.new_page()
-        page.goto(url, wait_until="domcontentloaded", timeout=45000)
-        page.wait_for_timeout(4000)
 
-        body = page.evaluate("document.body?.innerText || ''")
-        if "Come back in" in body:
-            return False, f"⏳ {name} 冷却中", None
+        voter_name = random_voter_name()
 
-        m = re.search(r'SERVER TIME REMAINING\s*([\d:]+)', body, re.I)
-        before_str = m.group(1) if m else 'N/A'
-        before_secs = _parse_time(before_str)
-        print(f"[{name}] Before: {before_str}", file=sys.stderr)
+        print(
+            f"[{name}] Voter: {voter_name}",
+            file=sys.stderr
+        )
 
-        # 填写投票者名字
-        page.wait_for_selector('input[name="voter_name"]', timeout=10000)
-        page.fill('input[name="voter_name"]', 'Rena')
+        vote_result = {
+            "request_sent": False,
+            "status": None,
+        }
 
-        # 清空 captcha 残留
-        page.evaluate("window._captchaWidgetId = null; window._captchaPendingForm = null;")
+        def on_request(req):
 
-        # 点击投票按钮（弹出 Turnstile 验证模态框）
-        page.wait_for_selector('button.vote-btn', timeout=5000)
-        page.evaluate("""() => {
-            document.querySelector('button.vote-btn')?.click();
-        }""")
-        print(f"[{name}] Clicked vote button. Waiting for Turnstile...", file=sys.stderr)
-
-        # 等待 captcha 模态框关闭（最多 40 秒）
-        for i in range(20):
-            page.wait_for_timeout(2000)
             try:
-                display = page.evaluate(
-                    "document.getElementById('captcha-modal')?.style?.display"
+
+                if (
+                    "/vote" in req.url
+                    and req.method == "POST"
+                ):
+                    vote_result["request_sent"] = True
+
+                    print(
+                        f"[{name}] Vote POST Sent",
+                        file=sys.stderr
+                    )
+
+            except:
+                pass
+
+        def on_response(resp):
+
+            try:
+
+                if "/vote" in resp.url:
+
+                    vote_result["status"] = resp.status
+
+                    print(
+                        f"[{name}] Vote Response: {resp.status}",
+                        file=sys.stderr
+                    )
+
+            except:
+                pass
+
+        page.on("request", on_request)
+        page.on("response", on_response)
+
+        page.on(
+            "pageerror",
+            lambda err: print(
+                f"[{name}] page_error: {err}",
+                file=sys.stderr
+            )
+        )
+
+        _safe_goto(
+            page,
+            url,
+            name
+        )
+
+        page.wait_for_timeout(3000)
+
+        body = page.evaluate(
+            "document.body?.innerText || ''"
+        )
+
+        if "Come back in" in body:
+
+            return (
+                False,
+                f"⏳ {name} 冷却中",
+                None
+            )
+
+        before_str = _extract_remaining_time(
+            body
+        )
+
+        before_secs = _parse_time(
+            before_str
+        )
+
+        print(
+            f"[{name}] Before: {before_str}",
+            file=sys.stderr
+        )
+
+        page.wait_for_selector(
+            'input[name="voter_name"]',
+            timeout=10000
+        )
+
+        page.fill(
+            'input[name="voter_name"]',
+            voter_name
+        )
+
+        page.locator(
+            "button.vote-btn"
+        ).click(force=True)
+
+        print(
+            f"[{name}] 点击 Vote",
+            file=sys.stderr
+        )
+
+        success_detected = False
+        after_str = "N/A"
+
+        success_patterns = [
+            "minutes added",
+            "minute added",
+            "thanks for supporting the server",
+        ]
+
+        #
+        # 主等待阶段（30秒）
+        #
+        for _ in range(15):
+
+            page.wait_for_timeout(2000)
+
+            try:
+
+                current_text = page.evaluate(
+                    "document.body?.innerText || ''"
                 )
-                if display != 'flex':
-                    print(f"[{name}] Modal closed at tick {i}", file=sys.stderr)
+
+            except:
+                continue
+
+            lower_text = current_text.lower()
+
+            after_str = _extract_remaining_time(
+                current_text
+            )
+
+            for p in success_patterns:
+
+                if p in lower_text:
+
+                    print(
+                        f"[{name}] Success Pattern: {p}",
+                        file=sys.stderr
+                    )
+
+                    success_detected = True
                     break
-            except Exception:
-                # 导航说明成功
-                page.wait_for_timeout(3000)
-                return True, f"✅ {name} 投票已提交（页面跳转）", "N/A"
 
-        # 等待结果稳定
-        page.wait_for_timeout(5000)
+            if success_detected:
+                break
 
-        # 读取结果
-        result = page.evaluate("document.body?.innerText || ''")
-        m2 = re.search(r'SERVER TIME REMAINING\s*([\d:]+)', result, re.I)
-        after_str = m2.group(1) if m2 else 'N/A'
-        after_secs = _parse_time(after_str)
-        print(f"[{name}] After: {after_str}", file=sys.stderr)
-        lower = result.lower()
+        #
+        # Turnstile补救
+        #
+        if (
+            not success_detected
+            and vote_result["status"] is None
+        ):
 
-        if "✓" in result and ("added" in lower or "minute" in lower):
-            return True, f"✅ {name} 续期成功！剩余: {after_str}", after_str
-        if before_secs and after_secs and after_secs > before_secs + 3000:
-            diff = (after_secs - before_secs) // 60
-            return True, f"✅ {name} 续期成功！剩余: {after_str} (+{diff}分)", after_str
-        if "come back" in lower or "cooldown" in lower:
-            return False, f"⏳ {name} 冷却中（{after_str}）", after_str
-        return False, f"❌ {name} 未生效。剩余: {after_str}", after_str
+            print(
+                f"[{name}] Turnstile超时，尝试触发",
+                file=sys.stderr
+            )
+
+            _click_turnstile(
+                page,
+                name
+            )
+
+            for _ in range(8):
+
+                page.wait_for_timeout(2000)
+
+                try:
+
+                    current_text = page.evaluate(
+                        "document.body?.innerText || ''"
+                    )
+
+                except:
+                    continue
+
+                lower_text = current_text.lower()
+
+                after_str = _extract_remaining_time(
+                    current_text
+                )
+
+                for p in success_patterns:
+
+                    if p in lower_text:
+
+                        print(
+                            f"[{name}] Success Pattern: {p}",
+                            file=sys.stderr
+                        )
+
+                        success_detected = True
+                        break
+
+                if (
+                    success_detected
+                    or vote_result["status"] == 302
+                ):
+                    break
+
+        try:
+
+            final_text = page.evaluate(
+                "document.body?.innerText || ''"
+            )
+
+            after_str = _extract_remaining_time(
+                final_text
+            )
+
+        except:
+            pass
+
+        after_secs = _parse_time(
+            after_str
+        )
+
+        print(
+            f"[{name}] After: {after_str}",
+            file=sys.stderr
+        )
+
+        #
+        # 最可靠成功判断
+        #
+        if (
+            vote_result["status"] == 302
+            and before_secs
+            and after_secs
+        ):
+
+            diff = (
+                after_secs - before_secs
+            ) // 60
+
+            return (
+                True,
+                f"✅ {name} 续期成功 (+{diff}分钟) 剩余:{after_str}",
+                after_str
+            )
+
+        if success_detected:
+
+            return (
+                True,
+                f"✅ {name} 检测到成功提示",
+                after_str
+            )
+
+        if (
+            before_secs
+            and after_secs
+            and after_secs > before_secs + 3000
+        ):
+
+            diff = (
+                after_secs - before_secs
+            ) // 60
+
+            return (
+                True,
+                f"✅ {name} 剩余时间增加 {diff} 分钟",
+                after_str
+            )
+
+        return (
+            False,
+            f"❌ {name} 未检测到续期成功",
+            after_str
+        )
+
     finally:
-        try: browser.close()
-        except: pass
+
+        try:
+            browser.close()
+        except:
+            pass
+
 
 def renew_server(url, name):
+
     for attempt in range(2):
+
         try:
-            success, msg, tl = _run_single_attempt(url, name)
-            if success or "冷却中" in msg:
+
+            success, msg, tl = _run_single_attempt(
+                url,
+                name
+            )
+
+            if success:
                 return success, msg, tl
-            print(f"[{name}] 重试 #{attempt+1}...", file=sys.stderr)
+
+            if "冷却中" in msg:
+                return success, msg, tl
+
+            print(
+                f"[{name}] 重试 #{attempt+1}",
+                file=sys.stderr
+            )
+
         except Exception as e:
-            print(f"[{name}] 异常: {e}", file=sys.stderr)
-            if attempt == 1: return False, f"❌ {name} 错误: {e}", None
-        if attempt < 1: time.sleep(3)
-    return False, f"❌ {name} 续期失败", None
+
+            print(
+                f"[{name}] 异常: {e}",
+                file=sys.stderr
+            )
+
+            if attempt == 1:
+
+                return (
+                    False,
+                    f"❌ {name} 错误: {e}",
+                    None
+                )
+
+        if attempt < 1:
+            time.sleep(3)
+
+    return (
+        False,
+        f"❌ {name} 续期失败",
+        None
+    )
+
 
 def main():
+
     results = []
+
     for s in SERVERS:
-        print(f"\n=== {s['name']} ===", file=sys.stderr)
-        ok, msg, tl = renew_server(s["url"], s["name"])
-        results.append((ok, msg, tl))
-    print("\n" + "="*30)
+
+        print(
+            f"\n=== {s['name']} ===",
+            file=sys.stderr
+        )
+
+        ok, msg, tl = renew_server(
+            s["url"],
+            s["name"]
+        )
+
+        results.append(
+            (ok, msg, tl)
+        )
+
+    print("\n" + "=" * 30)
     print("📊 G4F 服务器续期报告")
-    for _, msg, _ in results: print(f"  {msg}")
+
+    for _, msg, _ in results:
+        print(f"  {msg}")
+
 
 if __name__ == "__main__":
     main()
