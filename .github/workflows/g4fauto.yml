@@ -1,0 +1,110 @@
+name: G4F Renew Via VPNGate
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+jobs:
+  renew:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+
+          python -m pip install --upgrade pip
+
+          pip install cloakbrowser playwright requests
+
+          python -m playwright install chromium
+          python -m playwright install-deps chromium
+
+      #
+      # 安装 VPNGate 项目
+      #
+      - name: Clone VPNGate Project
+        run: |
+          git clone https://github.com/baoweise-bot/aimili-vpngate.git
+
+      - name: Install VPNGate
+        run: |
+          cd aimili-vpngate
+
+          chmod +x *.sh || true
+
+          sudo bash install.sh || true
+
+      #
+      # 记录原始出口
+      #
+      - name: Check Original IP
+        run: |
+          echo "===== BEFORE VPN ====="
+          curl -s https://ping0.cc/ip || true
+          curl -s https://api.ipify.org || true
+          echo
+
+      #
+      # 启动 VPN
+      #
+      - name: Start VPN
+        run: |
+          cd aimili-vpngate
+
+          timeout 300 bash start.sh || true
+
+      #
+      # 等待路由切换
+      #
+      - name: Wait VPN
+        run: |
+          sleep 60
+
+      #
+      # 验证出口
+      #
+      - name: Verify Exit IP
+        run: |
+          echo "===== AFTER VPN ====="
+
+          curl -s https://ping0.cc/ip || true
+          echo
+
+          curl -s https://api.ipify.org || true
+          echo
+
+      #
+      # 测试 g4f 可达性
+      #
+      - name: Test g4f
+        run: |
+          curl -I https://g4f.gg/deku || true
+
+      #
+      # 执行续期
+      #
+      - name: Run Renew
+        run: |
+          python renew.py
+
+      #
+      # 上传日志方便排查
+      #
+      - name: Upload Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workflow-logs
+          path: |
+            *.log
