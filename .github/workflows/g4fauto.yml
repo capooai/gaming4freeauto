@@ -26,7 +26,7 @@ jobs:
           python -m pip install --upgrade pip
 
           pip install \
-            cloakbrowser \
+            "cloakbrowser[geoip]" \
             playwright \
             requests \
             "httpx[socks]"
@@ -56,8 +56,10 @@ jobs:
         with:
           path: |
             ~/.cache/cloakbrowser
-            ~/.local/share/cloakbrowser
-          key: cloakbrowser-v146
+          key: cloakbrowser-${{ hashFiles('**/requirements.txt') }}-${{ runner.os }}
+          restore-keys: |
+            cloakbrowser-${{ hashFiles('**/requirements.txt') }}-
+            cloakbrowser-
 
       ####################################################################
       # Warmup CloakBrowser
