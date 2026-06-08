@@ -11,11 +11,9 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
@@ -30,10 +28,6 @@ jobs:
           python -m playwright install chromium
           python -m playwright install-deps chromium
 
-      ####################################################
-      # 安装 AimiliVPN
-      ####################################################
-
       - name: Clone AimiliVPN
         run: |
           git clone https://github.com/baoweise-bot/aimili-vpngate.git
@@ -41,115 +35,67 @@ jobs:
       - name: Install AimiliVPN
         run: |
           cd aimili-vpngate
-
           chmod +x *.sh || true
-
           sudo bash install.sh
 
-      ####################################################
-      # 当前出口
-      ####################################################
+      - name: Show Status
+        run: |
+          sudo ml status || true
 
-      - name: Check Original IP
+      - name: Wait VPN Bootstrap
+        run: |
+          echo "Waiting for VPN node selection..."
+          sleep 240
+
+      - name: Check Port
+        run: |
+          sudo ss -lntp | grep 7928 || true
+
+      - name: Wait For SOCKS5 Ready
+        run: |
+          for i in {1..20}; do
+
+            echo "Attempt $i"
+
+            if curl \
+              --silent \
+              --max-time 20 \
+              --socks5-hostname 127.0.0.1:7928 \
+              https://api.ipify.org
+            then
+              echo
+              echo "SOCKS5 READY"
+              exit 0
+            fi
+
+            sleep 15
+
+          done
+
+          echo "SOCKS5 NOT READY"
+          exit 1
+
+      - name: Verify Exit IP
         run: |
           echo "===== DIRECT ====="
           curl -s https://api.ipify.org
           echo
 
-      ####################################################
-      # 查看 AimiliVPN 状态
-      ####################################################
-
-      - name: Check AimiliVPN Status
-        run: |
-          echo "===== WHICH ML ====="
-          which ml || true
-
-          echo
-          echo "===== ML STATUS ====="
-          ml status || true
-
-          echo
-          echo "===== PROCESS ====="
-          ps aux | grep -Ei "mihomo|clash|xray|sing-box|vpn" || true
-
-      ####################################################
-      # 等待节点连接
-      ####################################################
-
-      - name: Wait VPN
-        run: |
-          sleep 60
-
-      ####################################################
-      # 检查监听端口
-      ####################################################
-
-      - name: Check SOCKS5 Port
-        run: |
-          echo "===== PORT 7928 ====="
-
-          ss -lntp || true
-
-          echo
-          netstat -lntp 2>/dev/null || true
-
-      ####################################################
-      # 查看日志
-      ####################################################
-
-      - name: Show AimiliVPN Logs
-        run: |
-          echo "===== ML LOGS ====="
-
-          ml logs || true
-
-      ####################################################
-      # 测试 SOCKS5
-      ####################################################
-
-      - name: Verify SOCKS5 Proxy
-        run: |
-          echo "===== DIRECT IP ====="
-
-          curl -s https://api.ipify.org
-          echo
-
-          echo
-          echo "===== SOCKS5 IP ====="
-
+          echo "===== SOCKS5 ====="
           curl \
-            --connect-timeout 30 \
             --socks5-hostname 127.0.0.1:7928 \
-            https://api.ipify.org || true
-
+            https://api.ipify.org
           echo
 
-          echo
-          echo "===== SOCKS5 PING0 ====="
-
+          echo "===== PING0 ====="
           curl \
-            --connect-timeout 30 \
             --socks5-hostname 127.0.0.1:7928 \
-            https://ping0.cc/ip || true
-
+            https://ping0.cc/ip
           echo
 
-      ####################################################
-      # 测试目标站点
-      ####################################################
-
-      - name: Test G4F Through SOCKS5
+      - name: Show VPN Logs
         run: |
-          curl \
-            -I \
-            --connect-timeout 30 \
-            --socks5-hostname 127.0.0.1:7928 \
-            https://g4f.gg/deku || true
-
-      ####################################################
-      # 执行续期
-      ####################################################
+          sudo ml logs || true
 
       - name: Run Renew
         env:
@@ -159,10 +105,6 @@ jobs:
         run: |
           python renew.py
 
-      ####################################################
-      # 上传日志
-      ####################################################
-
       - name: Upload Logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -170,4 +112,3 @@ jobs:
           name: g4f-renew-logs
           path: |
             *.log
-            vpn.log
