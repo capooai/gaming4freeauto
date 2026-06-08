@@ -491,6 +491,29 @@ def renew_server(url, name):
 
 def main():
 
+    # ===== 查看出站 IP =====
+    import subprocess
+    try:
+        result = subprocess.run(
+            [
+                "curl",
+                "-s",
+                "--max-time", "15",
+                "https://ip.sb"
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20
+        )
+        print("\n===== 出站 IP 信息 =====")
+        if result.returncode == 0:
+            print(result.stdout.strip())
+        else:
+            print(f"获取失败: {result.stderr}")
+    except Exception as e:
+        print(f"获取 IP 异常: {e}")
+    print("===== IP 查询结束 =====\n")
+
     results = []
 
     for s in SERVERS:
