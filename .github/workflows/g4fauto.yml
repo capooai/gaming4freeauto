@@ -11,9 +11,11 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
@@ -38,37 +40,44 @@ jobs:
           chmod +x *.sh || true
           sudo bash install.sh
 
-      - name: Show Status
+      - name: Show VPN Status
         run: |
+          echo "===== ML STATUS ====="
           sudo ml status || true
 
       - name: Wait VPN Bootstrap
         run: |
-          echo "Waiting for VPN node selection..."
-          sleep 240
+          echo "Waiting VPN bootstrap..."
+          sleep 120
 
-      - name: Check Port
+      - name: Check VPN Processes
         run: |
+          echo "===== OPENVPN ====="
+          ps aux | grep openvpn || true
+
+          echo
+          echo "===== PORT 7928 ====="
           sudo ss -lntp | grep 7928 || true
 
       - name: Wait For SOCKS5 Ready
         run: |
-          for i in {1..20}; do
+          for i in {1..30}; do
 
             echo "Attempt $i"
 
-            if curl \
+            IP=$(curl \
               --silent \
               --max-time 20 \
               --socks5-hostname 127.0.0.1:7928 \
-              https://api.ipify.org
-            then
-              echo
+              https://api.ipify.org || true)
+
+            if [ -n "$IP" ]; then
               echo "SOCKS5 READY"
+              echo "EXIT IP: $IP"
               exit 0
             fi
 
-            sleep 15
+            sleep 10
 
           done
 
@@ -81,21 +90,27 @@ jobs:
           curl -s https://api.ipify.org
           echo
 
+          echo
           echo "===== SOCKS5 ====="
           curl \
             --socks5-hostname 127.0.0.1:7928 \
             https://api.ipify.org
           echo
 
+          echo
           echo "===== PING0 ====="
           curl \
             --socks5-hostname 127.0.0.1:7928 \
             https://ping0.cc/ip
           echo
 
-      - name: Show VPN Logs
+      - name: Test G4F Via SOCKS5
         run: |
-          sudo ml logs || true
+          curl \
+            -I \
+            --max-time 30 \
+            --socks5-hostname 127.0.0.1:7928 \
+            https://g4f.gg/deku || true
 
       - name: Run Renew
         env:
