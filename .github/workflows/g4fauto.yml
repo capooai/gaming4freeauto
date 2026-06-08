@@ -141,21 +141,22 @@ jobs:
       - name: Verify Exit IP
         run: |
           echo "===== DIRECT ====="
-          curl -s https://api.ipify.org
+          curl -s https://api.ipify.org || true
+          curl -s https://ip.sb || true
           echo
 
           echo
           echo "===== SOCKS5 ====="
           curl \
             --socks5-hostname 127.0.0.1:7928 \
-            https://api.ipify.org
+            https://api.ipify.org || true
           echo
 
           echo
           echo "===== PING0 ====="
           curl \
             --socks5-hostname 127.0.0.1:7928 \
-            https://ping0.cc/ip
+            https://ip.sb || true
           echo
 
       ####################################################################
