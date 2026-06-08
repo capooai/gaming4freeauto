@@ -25,11 +25,48 @@ jobs:
 
           python -m pip install --upgrade pip
 
-          pip install cloakbrowser playwright requests "httpx[socks]"
+          pip install \
+            cloakbrowser \
+            playwright \
+            requests \
+            "httpx[socks]"
 
           python -m playwright install chromium
           python -m playwright install-deps chromium
 
+      ####################################################################
+      # Cache CloakBrowser Chromium
+      ####################################################################
+      - name: Cache CloakBrowser
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/cloakbrowser
+            ~/.local/share/cloakbrowser
+          key: cloakbrowser-v146
+
+      ####################################################################
+      # Warmup CloakBrowser
+      ####################################################################
+      - name: Warmup CloakBrowser
+        run: |
+          python - <<'PY'
+          from cloakbrowser import launch
+
+          print("Warmup CloakBrowser...")
+
+          browser = launch(
+              headless=True
+          )
+
+          browser.close()
+
+          print("Chromium Ready")
+          PY
+
+      ####################################################################
+      # Install AimiliVPN
+      ####################################################################
       - name: Clone AimiliVPN
         run: |
           git clone https://github.com/baoweise-bot/aimili-vpngate.git
@@ -37,19 +74,30 @@ jobs:
       - name: Install AimiliVPN
         run: |
           cd aimili-vpngate
+
           chmod +x *.sh || true
+
           sudo bash install.sh
 
+      ####################################################################
+      # Status
+      ####################################################################
       - name: Show VPN Status
         run: |
           echo "===== ML STATUS ====="
           sudo ml status || true
 
+      ####################################################################
+      # Wait bootstrap
+      ####################################################################
       - name: Wait VPN Bootstrap
         run: |
           echo "Waiting VPN bootstrap..."
           sleep 60
 
+      ####################################################################
+      # Check processes
+      ####################################################################
       - name: Check VPN Processes
         run: |
           echo "===== OPENVPN ====="
@@ -59,6 +107,9 @@ jobs:
           echo "===== PORT 7928 ====="
           sudo ss -lntp | grep 7928 || true
 
+      ####################################################################
+      # Wait SOCKS5
+      ####################################################################
       - name: Wait For SOCKS5 Ready
         run: |
           for i in {1..30}; do
@@ -84,6 +135,9 @@ jobs:
           echo "SOCKS5 NOT READY"
           exit 1
 
+      ####################################################################
+      # Verify IP
+      ####################################################################
       - name: Verify Exit IP
         run: |
           echo "===== DIRECT ====="
@@ -94,10 +148,19 @@ jobs:
           echo "===== SOCKS5 ====="
           curl \
             --socks5-hostname 127.0.0.1:7928 \
-            https://api.ipify.org || true
+            https://api.ipify.org
           echo
 
+          echo
+          echo "===== PING0 ====="
+          curl \
+            --socks5-hostname 127.0.0.1:7928 \
+            https://ping0.cc/ip
+          echo
 
+      ####################################################################
+      # Verify g4f
+      ####################################################################
       - name: Test G4F Via SOCKS5
         run: |
           curl \
@@ -106,6 +169,9 @@ jobs:
             --socks5-hostname 127.0.0.1:7928 \
             https://g4f.gg/deku || true
 
+      ####################################################################
+      # Run Renew
+      ####################################################################
       - name: Run Renew
         env:
           ALL_PROXY: socks5://127.0.0.1:7928
@@ -114,6 +180,9 @@ jobs:
         run: |
           python renew.py
 
+      ####################################################################
+      # Upload logs
+      ####################################################################
       - name: Upload Logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -121,3 +190,4 @@ jobs:
           name: g4f-renew-logs
           path: |
             *.log
+            **/*.log
