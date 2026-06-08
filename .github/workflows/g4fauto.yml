@@ -63,6 +63,8 @@ jobs:
       # Warmup CloakBrowser
       ####################################################################
       - name: Warmup CloakBrowser
+        env:
+          DISPLAY: :99  
         run: |
           python - <<'PY'
           from cloakbrowser import launch
