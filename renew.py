@@ -5,6 +5,7 @@ import re
 import time
 import random
 import string
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from cloakbrowser import launch
 
@@ -71,8 +72,23 @@ def _safe_goto(page, url, name):
 
             page.goto(
                 url,
-                wait_until="networkidle",
-                timeout=60000
+                wait_until="domcontentloaded",
+                timeout=30000
+            )
+
+            #
+            # 给页面3秒渲染投票表单
+            #
+            page.wait_for_timeout(3000)
+
+            #
+            # 强行停止所有剩余加载（广告等）
+            #
+            page.evaluate("window.stop()")
+
+            print(
+                f"[{name}] 页面已加载，已停止广告资源",
+                file=sys.stderr
             )
 
             return
@@ -490,7 +506,8 @@ def renew_server(url, name):
 
 
 def main():
-    # ===== 验证代理 IP =====
+
+    # ===== 浏览器验证代理 IP =====
     try:
         print("\n===== 验证代理 IP =====", file=sys.stderr)
         check_browser = launch(
@@ -499,32 +516,68 @@ def main():
             proxy="socks5://127.0.0.1:7928"
         )
         check_page = check_browser.new_page()
-        check_page.goto("https://ip.sb", wait_until="networkidle", timeout=30000)
+        check_page.goto(
+            "https://ip.sb",
+            wait_until="domcontentloaded",
+            timeout=30000
+        )
+        
         check_page.wait_for_timeout(3000)
-        body_text = check_page.evaluate("document.body?.innerText || ''")
+        time.sleep(3)
+        check_page.evaluate("window.stop()")
+        body_text = check_page.evaluate(
+            "document.body?.innerText || ''"
+        )
         print(body_text, file=sys.stderr)
+
+        ip_match = re.search(
+            r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})",
+            body_text
+        )
+
+        if ip_match:
+            print(
+                f"✅ 浏览器代理已连接，出站 IP: {ip_match.group(1)}",
+                file=sys.stderr
+            )
+        else:
+            print(
+                "⚠️ 未能识别出站 IP",
+                file=sys.stderr
+            )
+
         check_browser.close()
         print("===== 验证完成 =====\n", file=sys.stderr)
+
     except Exception as e:
-        print(f"❌ 代理验证失败: {e}", file=sys.stderr)
-
-    results = []
-
-    for s in SERVERS:
-
         print(
-            f"\n=== {s['name']} ===",
+            f"❌ 代理 IP 检查失败: {e}",
             file=sys.stderr
         )
 
-        ok, msg, tl = renew_server(
-            s["url"],
-            s["name"]
-        )
+    # ===== 并行投票 =====
+    results = [None] * len(SERVERS)
 
-        results.append(
-            (ok, msg, tl)
+    def run_task(index, server):
+        print(
+            f"\n=== {server['name']} ===",
+            file=sys.stderr
         )
+        ok, msg, tl = renew_server(
+            server["url"],
+            server["name"]
+        )
+        return index, ok, msg, tl
+
+    with ThreadPoolExecutor(max_workers=len(SERVERS)) as executor:
+        futures = [
+            executor.submit(run_task, i, s)
+            for i, s in enumerate(SERVERS)
+        ]
+
+        for future in as_completed(futures):
+            index, ok, msg, tl = future.result()
+            results[index] = (ok, msg, tl)
 
     print("\n" + "=" * 30)
     print("📊 G4F 服务器续期报告")
