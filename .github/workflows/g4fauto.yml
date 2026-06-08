@@ -48,7 +48,7 @@ jobs:
       - name: Wait VPN Bootstrap
         run: |
           echo "Waiting VPN bootstrap..."
-          sleep 120
+          sleep 60
 
       - name: Check VPN Processes
         run: |
