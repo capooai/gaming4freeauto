@@ -524,7 +524,7 @@ def main():
         )
         
         check_page.wait_for_timeout(3000)
-        time.sleep(3)
+        time.sleep(5)
         check_page.evaluate("window.stop()")
         body_text = check_page.evaluate(
             "document.body?.innerText || ''"
