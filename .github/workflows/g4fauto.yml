@@ -63,7 +63,21 @@ jobs:
 
           print("Chromium Ready")
           PY
+      ####################################################################
+      # Install Xvfb
+      ####################################################################
+          
+      - name: Install Xvfb
+        run: |
+          sudo apt update
+          sudo apt install -y xvfb
 
+      - name: Start Xvfb
+        run: |
+          Xvfb :99 \
+            -screen 0 1920x1080x24 \
+            -ac &
+            
       ####################################################################
       # Install AimiliVPN
       ####################################################################
@@ -142,7 +156,6 @@ jobs:
         run: |
           echo "===== DIRECT ====="
           curl -s https://api.ipify.org || true
-          curl -s https://ip.sb || true
           echo
 
           echo
@@ -178,6 +191,7 @@ jobs:
           ALL_PROXY: socks5://127.0.0.1:7928
           HTTP_PROXY: socks5://127.0.0.1:7928
           HTTPS_PROXY: socks5://127.0.0.1:7928
+          DISPLAY: :99
         run: |
           python renew.py
 
