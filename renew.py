@@ -14,10 +14,7 @@ SERVERS = [
 ]
 
 
-def random_voter_name():browser = launch(
-    headless=True,
-    humanize=True
-)
+def random_voter_name():
     return (
         random.choice(string.ascii_uppercase)
         + ''.join(
@@ -148,7 +145,7 @@ def _run_single_attempt(url, name):
 
     browser = launch(
         headless=True,
-        humanize=True,
+        humanize=True，
         proxy="socks5://127.0.0.1:7928"
     )
 
