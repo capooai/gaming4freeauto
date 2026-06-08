@@ -56,7 +56,7 @@ jobs:
           print("Warmup CloakBrowser...")
 
           browser = launch(
-              headless=True
+              headless=False
           )
 
           browser.close()
