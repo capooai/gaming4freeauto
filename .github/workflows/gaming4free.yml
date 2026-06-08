@@ -14,8 +14,8 @@ jobs:
 
     steps:
       # 1. 检出仓库中的代码
-      - name: Checkout repository code
-        uses: actions/checkout@v4
+     # - name: Checkout repository code
+      #  uses: actions/checkout@v4
 
       # 2. 设置 Python 3.12 环境（已移除 cache 配置）
       - name: Set up Python 3.12
