@@ -107,6 +107,10 @@ jobs:
             https://g4f.gg/deku || true
 
       - name: Run Renew
+        env:
+          ALL_PROXY: socks5://127.0.0.1:7928
+          HTTP_PROXY: socks5://127.0.0.1:7928
+          HTTPS_PROXY: socks5://127.0.0.1:7928
         run: |
           python renew.py
 
