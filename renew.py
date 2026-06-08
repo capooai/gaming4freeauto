@@ -145,7 +145,7 @@ def _run_single_attempt(url, name):
 
     browser = launch(
         headless=True,
-        humanize=True，
+        humanize=True,
         proxy="socks5://127.0.0.1:7928"
     )
 
