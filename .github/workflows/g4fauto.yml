@@ -2,8 +2,14 @@ name: G4F Renew Via VPNGate
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/30 * * * *"
+    inputs:
+      reason:
+        description: 'Trigger reason'
+        required: false
+        default: 'cron-job.org'
+        type: string
+  #schedule:
+  #  - cron: "*/30 * * * *"
 
 jobs:
   renew:
