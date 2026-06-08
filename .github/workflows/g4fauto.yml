@@ -33,6 +33,20 @@ jobs:
 
           python -m playwright install chromium
           python -m playwright install-deps chromium
+      ####################################################################
+      # Install Xvfb
+      ####################################################################
+          
+      - name: Install Xvfb
+        run: |
+          sudo apt update
+          sudo apt install -y xvfb
+
+      - name: Start Xvfb
+        run: |
+          Xvfb :99 \
+            -screen 0 1920x1080x24 \
+            -ac &
 
       ####################################################################
       # Cache CloakBrowser Chromium
@@ -63,20 +77,7 @@ jobs:
 
           print("Chromium Ready")
           PY
-      ####################################################################
-      # Install Xvfb
-      ####################################################################
-          
-      - name: Install Xvfb
-        run: |
-          sudo apt update
-          sudo apt install -y xvfb
-
-      - name: Start Xvfb
-        run: |
-          Xvfb :99 \
-            -screen 0 1920x1080x24 \
-            -ac &
+     
             
       ####################################################################
       # Install AimiliVPN
