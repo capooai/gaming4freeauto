@@ -490,29 +490,23 @@ def renew_server(url, name):
 
 
 def main():
-
-    # ===== 查看出站 IP =====
-    import subprocess
+    # ===== 验证代理 IP =====
     try:
-        result = subprocess.run(
-            [
-                "curl",
-                "-s",
-                "--max-time", "15",
-                "https://ip.sb"
-            ],
-            capture_output=True,
-            text=True,
-            timeout=20
+        print("\n===== 验证代理 IP =====", file=sys.stderr)
+        check_browser = launch(
+            headless=False,
+            humanize=True,
+            proxy="socks5://127.0.0.1:7928"
         )
-        print("\n===== 出站 IP 信息 =====")
-        if result.returncode == 0:
-            print(result.stdout.strip())
-        else:
-            print(f"获取失败: {result.stderr}")
+        check_page = check_browser.new_page()
+        check_page.goto("https://ip.sb", wait_until="networkidle", timeout=30000)
+        check_page.wait_for_timeout(3000)
+        body_text = check_page.evaluate("document.body?.innerText || ''")
+        print(body_text, file=sys.stderr)
+        check_browser.close()
+        print("===== 验证完成 =====\n", file=sys.stderr)
     except Exception as e:
-        print(f"获取 IP 异常: {e}")
-    print("===== IP 查询结束 =====\n")
+        print(f"❌ 代理验证失败: {e}", file=sys.stderr)
 
     results = []
 
