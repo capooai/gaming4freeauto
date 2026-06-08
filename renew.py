@@ -162,6 +162,7 @@ def _run_single_attempt(url, name):
     browser = launch(
         headless=False,
         humanize=True,
+        geoip=True,
         proxy="socks5://127.0.0.1:7928"
     )
 
